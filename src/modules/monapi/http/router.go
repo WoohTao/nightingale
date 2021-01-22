@@ -20,6 +20,11 @@ func Config(r *gin.Engine) {
 		sys.GET("/addr", addr)
 	}
 
+	generic := r.Group("/api/mon").Use(GetCookieUser())
+	{
+		generic.GET("/regions", func(c *gin.Context) { renderData(c, config.Get().Region, nil) })
+	}
+
 	node := r.Group("/api/mon/node").Use(GetCookieUser())
 	{
 		node.GET("/:id/maskconf", maskconfGets)
@@ -83,20 +88,41 @@ func Config(r *gin.Engine) {
 		event.POST("/cur/claim", eventCurClaim)
 	}
 
+	// TODO: merge to collect-rule
 	collect := r.Group("/api/mon/collect").Use(GetCookieUser())
 	{
-		collect.POST("", collectPost)
-		collect.GET("/list", collectsGet)
-		collect.GET("", collectGet)
-		collect.PUT("", collectPut)
-		collect.DELETE("", collectsDel)
-		collect.POST("/check", regExpCheck)
+		collect.POST("", collectRulePost)     // create a collect rule
+		collect.GET("/list", collectRulesGet) // get collect rules
+		collect.GET("", collectRuleGet)       // get collect rule by type & id
+		collect.PUT("", collectRulePut)       // update collect rule by type & id
+		collect.DELETE("", collectsRuleDel)   // delete collect rules by type & ids
+		collect.POST("/check", regExpCheck)   // check collect rule
 	}
 
+	// TODO: merge to collect-rules, used by agent
 	collects := r.Group("/api/mon/collects")
 	{
-		collects.GET("/:endpoint", collectGetByEndpoint)
-		collects.GET("", collectsGet)
+		collects.GET("/:endpoint", collectRulesGetByLocalEndpoint) // get collect rules by endpoint, for agent
+		collects.GET("", collectRulesGet)                          // get collect rules
+	}
+
+	collectRules := r.Group("/api/mon/collect-rules").Use(GetCookieUser())
+	{
+		collectRules.POST("", collectRulePost)                            // create a collect rule
+		collectRules.GET("/list", collectRulesGetV2)                      // get collect rules
+		collectRules.GET("", collectRuleGet)                              // get collect rule by type & id
+		collectRules.PUT("", collectRulePut)                              // update collect rule by type & id
+		collectRules.DELETE("", collectsRuleDel)                          // delete collect rules by type & ids
+		collectRules.POST("/check", regExpCheck)                          // check collect rule
+		collectRules.GET("/types", collectRuleTypesGet)                   // get collect types, category: local|remote
+		collectRules.GET("/types/:type/template", collectRuleTemplateGet) // get collect teplate by type
+
+	}
+
+	collectRulesAnonymous := r.Group("/api/mon/collect-rules")
+	{
+		collectRulesAnonymous.GET("/endpoints/:endpoint/remote", collectRulesGetByRemoteEndpoint) // for prober
+		collectRulesAnonymous.GET("/endpoints/:endpoint/local", collectRulesGetByLocalEndpoint)   // for agent
 	}
 
 	stra := r.Group("/api/mon/stra").Use(GetCookieUser())
@@ -121,6 +147,12 @@ func Config(r *gin.Engine) {
 		aggr.DELETE("", aggrCalcsDel)
 		aggr.GET("", aggrCalcsGet)
 		aggr.GET("/:id", aggrCalcGet)
+	}
+
+	tpl := r.Group("/api/mon/tpl")
+	{
+		tpl.GET("", tplNameGets)
+		tpl.GET("/content", tplGet)
 	}
 
 	aggrs := r.Group("/api/mon/aggrs").Use()
@@ -150,6 +182,15 @@ func Config(r *gin.Engine) {
 		indexProxy.POST("/counter/clude", indexReq)
 		indexProxy.POST("/counter/detail", indexReq)
 	}
+
+	/*
+		v1 := r.Group("/v1/mon")
+		{
+			v1.POST("/report-detector-heartbeat", detectorHeartBeat)
+			v1.GET("/detectors", detectorInstanceGets)
+			v1.GET("/rules", collectRulesGet)
+		}
+	*/
 
 	if config.Get().Logger.Level == "DEBUG" {
 		pprof.Register(r, "/api/monapi/debug/pprof")

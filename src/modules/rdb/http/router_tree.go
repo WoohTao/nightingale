@@ -80,6 +80,15 @@ func treeUntilLeafGets(c *gin.Context) {
 				if strings.Contains(ret[i].Path, arr[0]) {
 					pathSet[ret[i].Path] = struct{}{}
 				}
+
+				// 根据节点名搜索
+				if strings.Contains(ret[i].Name, arr[0]) {
+					for j := 0; j < cnt; j++ {
+						if strings.HasPrefix(ret[j].Path, ret[i].Path) {
+							pathSet[ret[j].Path] = struct{}{}
+						}
+					}
+				}
 			}
 		}
 	} else {
@@ -89,6 +98,15 @@ func treeUntilLeafGets(c *gin.Context) {
 			for j := 0; j < qsz; j++ {
 				if !strings.Contains(ret[i].Path, arr[j]) {
 					match = false
+				}
+
+				// 根据节点名搜索
+				if strings.Contains(ret[i].Name, arr[j]) {
+					for k := 0; k < cnt; k++ {
+						if strings.HasPrefix(ret[k].Path, ret[i].Path) {
+							pathSet[ret[k].Path] = struct{}{}
+						}
+					}
 				}
 			}
 
@@ -126,7 +144,7 @@ func v1treeUntilProjectGetsByNid(c *gin.Context) {
 // 这个方法，展示的树只到project，节点搜索功能放到前台去
 func treeUntilProjectGets(c *gin.Context) {
 	me := loginUser(c)
-	oks, err := models.TreeUntilProjectsGetByUser(me)
+	oks, err := models.TreeUntilTypGetByUser(me, "project")
 
 	renderData(c, oks, err)
 }
@@ -137,7 +155,44 @@ func v1TreeUntilProjectGets(c *gin.Context) {
 	user, err := models.UserGet("username=?", username)
 	dangerous(err)
 
-	oks, err := models.TreeUntilProjectsGetByUser(user)
+	oks, err := models.TreeUntilTypGetByUser(user, "project")
+
+	renderData(c, oks, err)
+}
+
+func v1TreeUntilTypGets(c *gin.Context) {
+	username := queryStr(c, "username")
+	cate := queryStr(c, "cate")
+	onlyCate := queryInt(c, "onlyCate", 0)
+	pid := queryInt64(c, "pid", -1)
+	user, err := models.UserGet("username=?", username)
+	dangerous(err)
+
+	oks, err := models.TreeUntilTypGetByUser(user, cate)
+	dangerous(err)
+
+	var ret []models.Node
+	for _, node := range oks {
+		//指定了父节点，不是想要的父节点
+		if pid != -1 && node.Pid != pid {
+			continue
+		}
+
+		//指定了节点类型，不是想要的节点类型
+		if onlyCate != 0 && node.Cate != cate {
+			continue
+		}
+
+		ret = append(ret, node)
+	}
+
+	renderData(c, ret, err)
+}
+
+// 这个方法，展示的树只到organization
+func treeUntilOrganizationGets(c *gin.Context) {
+	me := loginUser(c)
+	oks, err := models.TreeUntilTypGetByUser(me, "organization")
 
 	renderData(c, oks, err)
 }

@@ -24,8 +24,10 @@ func straPost(c *gin.Context) {
 
 	errors.Dangerous(stra.Encode())
 
-	oldStra, _ := models.StraGet("name", stra.Name)
-	if oldStra != nil && oldStra.Nid == stra.Nid {
+	old, err := models.StraFindOne("nid=? and name=?", stra.Nid, stra.Name)
+	dangerous(err)
+
+	if old != nil {
 		bomb("同节点下策略名称 %s 已存在", stra.Name)
 	}
 
@@ -54,8 +56,10 @@ func straPut(c *gin.Context) {
 	stra.LastUpdator = username
 	errors.Dangerous(stra.Encode())
 
-	oldStra, _ := models.StraGet("name", stra.Name)
-	if oldStra != nil && oldStra.Id != stra.Id && oldStra.Nid == stra.Nid {
+	old, err := models.StraFindOne("nid=? and name=? and id <> ?", stra.Nid, stra.Name, stra.Id)
+	dangerous(err)
+
+	if old != nil {
 		bomb("同节点下策略名称 %s 已存在", stra.Name)
 	}
 
@@ -129,7 +133,7 @@ func effectiveStrasGet(c *gin.Context) {
 	if queryInt(c, "all", 0) == 1 {
 		stras = scache.StraCache.GetAll()
 	} else if instance != "" {
-		node, err := scache.ActiveNode.GetNodeBy(instance)
+		node, err := scache.ActiveJudgeNode.GetNodeBy(instance)
 		errors.Dangerous(err)
 
 		stras = scache.StraCache.GetByNode(node)

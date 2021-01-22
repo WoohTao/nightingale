@@ -10,6 +10,7 @@ type Instance struct {
 	HTTPPort string `json:"http_port" xorm:"http_port"`
 	TS       int64  `json:"ts" xorm:"ts"`
 	Remark   string `json:"remark"`
+	Region   string `json:"region"`
 	Active   bool   `xorm:"-" json:"active"`
 }
 
@@ -19,7 +20,7 @@ func (i *Instance) Add() error {
 }
 
 func (i *Instance) Update() error {
-	_, err := DB["hbs"].Where("id=?", i.Id).MustCols("ts", "http_port", "rpc_port").Update(i)
+	_, err := DB["hbs"].Where("id=?", i.Id).MustCols("ts", "http_port", "rpc_port", "region").Update(i)
 	return err
 }
 

@@ -1,3 +1,17 @@
+// Copyright 2017 Xiaomi, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rpc
 
 import (
@@ -27,7 +41,7 @@ func (t *Transfer) Push(args []*dataobj.MetricValue, reply *dataobj.TransferResp
 		stats.Counter.Set("points.in", 1)
 		if err := v.CheckValidity(start.Unix()); err != nil {
 			stats.Counter.Set("points.in.err", 1)
-			msg := fmt.Sprintf("illegal item:%s err:%v", v, err)
+			msg := fmt.Sprintf("illegal item:%+v err:%v", v, err)
 			logger.Warningf(msg)
 			reply.Invalid += 1
 			reply.Msg += msg
@@ -74,7 +88,7 @@ func PushData(args []*dataobj.MetricValue) (int, string) {
 		stats.Counter.Set("points.in", 1)
 		if err := v.CheckValidity(start.Unix()); err != nil {
 			stats.Counter.Set("points.in.err", 1)
-			msg := fmt.Sprintf("illegal item:%s err:%v", v, err)
+			msg := fmt.Sprintf("illegal item:%+v err:%v", v, err)
 			logger.Warningf(msg)
 			errCount += 1
 			errMsg += msg

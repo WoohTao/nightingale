@@ -29,6 +29,12 @@ type ConfYaml struct {
 	Link          linkSection         `yaml:"link"`
 	IndexMod      string              `yaml:"indexMod"`
 	I18n          i18n.I18nSection    `yaml:"i18n"`
+	Tpl           tplSection          `yaml:"tpl"`
+}
+
+type tplSection struct {
+	AlertPath  string `yaml:"alertPath"`
+	ScreenPath string `yaml:"screenPath"`
 }
 
 type mergeSection struct {
@@ -38,8 +44,9 @@ type mergeSection struct {
 }
 
 type cleanerSection struct {
-	Days  int `yaml:"days"`
-	Batch int `yaml:"batch"`
+	Days     int  `yaml:"days"`
+	Batch    int  `yaml:"batch"`
+	Converge bool `yaml:"converge"`
 }
 
 type queueSection struct {
@@ -94,7 +101,9 @@ type loggerSection struct {
 }
 
 type httpSection struct {
-	Listen string `yaml:"listen"`
+	Mode         string `yaml:"mode"`
+	CookieName   string `yaml:"cookieName"`
+	CookieDomain string `yaml:"cookieDomain"`
 }
 
 type proxySection struct {
@@ -167,8 +176,14 @@ func Parse(ymlfile string) error {
 	})
 
 	viper.SetDefault("cleaner", map[string]interface{}{
-		"days":  31,
-		"batch": 100,
+		"days":     31,
+		"batch":    100,
+		"converge": true, // 历史告警的数据库表，对于已收敛的告警，默认删掉，不保留，省得告警太多
+	})
+
+	viper.SetDefault("tpl", map[string]string{
+		"alertPath":  "./etc/alert",
+		"screenPath": "./etc/screen",
 	})
 
 	err = viper.Unmarshal(&yaml)

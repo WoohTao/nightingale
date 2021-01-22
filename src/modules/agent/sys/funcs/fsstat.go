@@ -1,9 +1,24 @@
+// Copyright 2017 Xiaomi, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package funcs
 
 import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"time"
@@ -68,7 +83,7 @@ func FsRWMetrics() []*dataobj.MetricValue {
 			continue
 		}
 
-		file := filepath.Join(du.FsFile, ".fs-detect")
+		file := filepath.Join(du.FsFile, ".fs-detect."+genRandStr())
 		now := time.Now().Format("2006-01-02 15:04:05")
 		content := "FS-RW" + now
 		err = CheckFS(file, content)
@@ -113,4 +128,21 @@ func CheckFS(file string, content string) error {
 		return err
 	}
 	return nil
+}
+
+func genRandStr() string {
+	const len = 5
+	var letters []byte = []byte("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+	randBytes := make([]byte, len)
+	if _, err := rand.Read(randBytes); err != nil {
+		return fmt.Sprintf("%d", rand.Int63())
+	}
+
+	for i := 0; i < len; i++ {
+		pos := randBytes[i] % 62
+		randBytes[i] = letters[pos]
+	}
+
+	return string(randBytes)
 }

@@ -2,9 +2,11 @@ package http
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/toolkits/pkg/logger"
 	"github.com/toolkits/pkg/slice"
 	"github.com/toolkits/pkg/str"
 
@@ -345,6 +347,8 @@ func resourceBindNode(c *gin.Context) {
 		if len(ids) == 0 {
 			bomb("resources not found by %s", "ident")
 		}
+	} else if f.Field == "id" {
+		ids = str.IdsInt64(strings.Join(f.Items, ","))
 	} else {
 		bomb("field[%s] not supported", f.Field)
 	}
@@ -485,9 +489,9 @@ type nodeResourcesCountResp struct {
 	Count int    `json:"count"`
 }
 
-func renderNodeResourcesCountByCate(c *gin.Context) {
-	needSourceList := []string{"physical", "virtual", "redis", "mongo", "mysql", "container", "sw", "volume"}
+var needSourceList = []string{"physical", "virtual", "redis", "mongo", "mysql", "container", "sw", "volume"}
 
+func renderNodeResourcesCountByCate(c *gin.Context) {
 	nodeId := urlParamInt64(c, "id")
 	node := Node(nodeId)
 	leadIds, err := node.LeafIds()
@@ -501,7 +505,7 @@ func renderNodeResourcesCountByCate(c *gin.Context) {
 	ress, err := models.ResourceUnderNodeGets(leadIds, query, batch, field, limit, 0)
 	dangerous(err)
 
-	aggDat := make(map[string]int, len(ress))
+	aggDat := make(map[string]int, len(needSourceList))
 	for _, res := range ress {
 		cate := res.Cate
 		if cate != "" {
@@ -529,4 +533,214 @@ func renderNodeResourcesCountByCate(c *gin.Context) {
 	}
 
 	renderData(c, list, nil)
+}
+
+func renderAllResourcesCountByCate(c *gin.Context) {
+	aggDat := make(map[string]int, len(needSourceList))
+	ress, err := models.ResourceGets("", nil)
+	if err != nil {
+		logger.Error(err)
+		dangerous(err)
+	}
+
+	for _, res := range ress {
+		cate := res.Cate
+		if cate != "" {
+			if _, ok := aggDat[cate]; !ok {
+				aggDat[cate] = 0
+			}
+
+			aggDat[cate]++
+		}
+	}
+
+	for _, need := range needSourceList {
+		if _, ok := aggDat[need]; !ok {
+			aggDat[need] = 0
+		}
+	}
+
+	var list []*nodeResourcesCountResp
+	for n, c := range aggDat {
+		ns := new(nodeResourcesCountResp)
+		ns.Name = n
+		ns.Count = c
+
+		list = append(list, ns)
+	}
+
+	renderData(c, list, nil)
+}
+
+// 租户项目粒度资源排行
+type resourceRank struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+func tenantResourcesCountRank(c *gin.Context) {
+	resCate := queryStr(c, "resource_cate", "virtual")
+	top := queryInt(c, "top", 0)
+	if top < 0 {
+		dangerous(fmt.Errorf("param top < 0"))
+	}
+
+	tenantNode, err := models.NodeGets("cate=?", "tenant")
+	dangerous(err)
+
+	tenantNodeLen := len(tenantNode)
+	tenantNodeName := make(map[string]string, tenantNodeLen)
+	for _, node := range tenantNode {
+		if node.Ident != "" && node.Name != "" {
+			tenantNodeName[node.Ident] = node.Name
+		}
+	}
+
+	ress, err := models.ResourceGets("cate=?", resCate)
+	dangerous(err)
+
+	resMap := make(map[string]int, 50)
+	for _, res := range ress {
+		tenant := res.Tenant
+		if tenant != "" {
+			if _, ok := resMap[tenant]; !ok {
+				resMap[tenant] = 0
+			}
+
+			resMap[tenant]++
+		}
+	}
+
+	var ret []*resourceRank
+	for k, v := range resMap {
+		tR := new(resourceRank)
+		name, ok := tenantNodeName[k]
+		if !ok {
+			name = k
+		}
+		tR.Name = name
+		tR.Count = v
+
+		ret = append(ret, tR)
+	}
+
+	retLen := len(ret)
+	if retLen > 0 {
+		sort.Slice(ret, func(i, j int) bool { return ret[i].Count > ret[j].Count })
+	}
+
+	if top == 0 {
+		renderData(c, ret, nil)
+		return
+	}
+
+	if retLen > top {
+		renderData(c, ret[:top], nil)
+		return
+	}
+
+	renderData(c, ret, nil)
+}
+
+func projectResourcesCountRank(c *gin.Context) {
+	resCate := queryStr(c, "resource_cate", "virtual")
+	top := queryInt(c, "top", 0)
+	if top < 0 {
+		dangerous(fmt.Errorf("param top < 0"))
+	}
+
+	// 获取全部project
+	projectNodes, err := models.NodeGets("cate=?", "project")
+	dangerous(err)
+
+	projectNodesLen := len(projectNodes)
+	workerNum := 50
+	if projectNodesLen < workerNum {
+		workerNum = projectNodesLen
+	}
+
+	worker := make(chan struct{}, workerNum) // 控制 goroutine 并发数
+	dataChan := make(chan *resourceRank, projectNodesLen)
+
+	done := make(chan struct{}, 1)
+	resp := make([]*resourceRank, 0)
+	go func() {
+		defer func() { done <- struct{}{} }()
+		for d := range dataChan {
+			resp = append(resp, d)
+		}
+	}()
+
+	for _, pN := range projectNodes {
+		worker <- struct{}{}
+		go singleProjectResCount(pN.Id, resCate, worker,
+			dataChan)
+	}
+
+	// 等待所有 goroutine 执行完成
+	for i := 0; i < workerNum; i++ {
+		worker <- struct{}{}
+	}
+	close(dataChan)
+
+	// 等待所有 dataChan 被消费完
+	<-done
+
+	//整理resp中数据
+	respLen := len(resp)
+	if respLen > 0 {
+		sort.Slice(resp, func(i, j int) bool { return resp[i].Count > resp[j].Count })
+	}
+
+	if top == 0 {
+		renderData(c, resp, nil)
+		return
+	}
+
+	if respLen > top {
+		renderData(c, resp[:top], nil)
+		return
+	}
+
+	renderData(c, resp, nil)
+}
+
+func singleProjectResCount(id int64, resCate string, worker chan struct{}, dataChan chan *resourceRank) {
+	defer func() {
+		<-worker
+	}()
+
+	node, err := models.NodeGet("id=?", id)
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+
+	if node == nil {
+		logger.Errorf("node id %d is nil", id)
+		return
+	}
+
+	leafIds, err := node.LeafIds()
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+
+	cnt, err := models.ResCountGetByNodeIdsAndCate(leafIds, resCate)
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+
+	data := new(resourceRank)
+	nodeName := node.Name
+	if nodeName != "" {
+		data.Name = nodeName
+	} else {
+		data.Name = node.Ident
+	}
+	data.Count = cnt
+
+	dataChan <- data
 }

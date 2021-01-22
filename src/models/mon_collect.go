@@ -185,12 +185,6 @@ type LogCollect struct {
 	ParseSucc    bool                      `xorm:"-" json:"-"`
 }
 
-type ApiCollectSid struct {
-	Id  int64 `json:"id"`
-	Cid int64 `json:"cid"`
-	Sid int64 `json:"sid"`
-}
-
 type ApiCollect struct {
 	Id               int64     `json:"id"`
 	Nid              int64     `json:"nid"`
@@ -310,7 +304,7 @@ func (p *PortCollect) Update() error {
 		return err
 	}
 
-	if err := saveHist(p.Id, "port", "update", p.Creator, string(portByte), session); err != nil {
+	if err := saveHistory(p.Id, "port", "update", p.Creator, string(portByte), session); err != nil {
 		session.Rollback()
 		return err
 	}
@@ -348,7 +342,7 @@ func (p *ProcCollect) Update() error {
 		return err
 	}
 
-	if err := saveHist(p.Id, "port", "update", p.Creator, string(b), session); err != nil {
+	if err := saveHistory(p.Id, "port", "update", p.Creator, string(b), session); err != nil {
 		session.Rollback()
 		return err
 	}
@@ -386,7 +380,7 @@ func (p *LogCollect) Update() error {
 		return err
 	}
 
-	if err := saveHist(p.Id, "log", "update", p.Creator, string(b), session); err != nil {
+	if err := saveHistory(p.Id, "log", "update", p.Creator, string(b), session); err != nil {
 		session.Rollback()
 		return err
 	}
@@ -444,7 +438,7 @@ func (p *PluginCollect) Update() error {
 		return err
 	}
 
-	if err := saveHist(p.Id, "plugin", "update", p.Creator, string(b), session); err != nil {
+	if err := saveHistory(p.Id, "plugin", "update", p.Creator, string(b), session); err != nil {
 		session.Rollback()
 		return err
 	}
@@ -519,7 +513,7 @@ func (a *ApiCollect) Update() error {
 		return err
 	}
 
-	if err := saveHist(a.Id, "api", "update", a.Creator, string(b), session); err != nil {
+	if err := saveHistory(a.Id, "api", "update", a.Creator, string(b), session); err != nil {
 		session.Rollback()
 		return err
 	}
@@ -529,58 +523,6 @@ func (a *ApiCollect) Update() error {
 	}
 
 	return err
-}
-
-func DeleteApiCollect(id int64) error {
-	session := DB["mon"].NewSession()
-	defer session.Close()
-
-	_, err := session.Where("id = ?", id).Delete(new(ApiCollect))
-	if err != nil {
-		session.Rollback()
-		return err
-	}
-
-	var relCidSid ApiCollectSid
-	has, err := session.Where("cid = ?", id).Get(&relCidSid)
-	if err != nil {
-		session.Rollback()
-		return err
-	}
-	if has {
-		err = StraDel(relCidSid.Sid)
-		if err != nil {
-			session.Rollback()
-			return err
-		}
-	}
-
-	return session.Commit()
-}
-
-func GetSidByCid(cid int64) (int64, error) {
-	var cidSid ApiCollectSid
-	_, err := DB["mon"].Where("cid = ?", cid).Get(&cidSid)
-	return cidSid.Sid, err
-}
-
-func (a *ApiCollectSid) Add() error {
-	session := DB["mon"].NewSession()
-	defer session.Close()
-
-	_, err := session.Where("cid = ?", a.Cid).Delete(new(ApiCollectSid))
-	if err != nil {
-		session.Rollback()
-		return err
-	}
-
-	_, err = session.Insert(a)
-	if err != nil {
-		session.Rollback()
-		return err
-	}
-
-	return session.Commit()
 }
 
 func CreateCollect(collectType, creator string, collect interface{}) error {
@@ -603,132 +545,12 @@ func CreateCollect(collectType, creator string, collect interface{}) error {
 		return err
 	}
 
-	if err := saveHist(0, collectType, "create", creator, string(b), session); err != nil {
+	if err := saveHistory(0, collectType, "create", creator, string(b), session); err != nil {
 		session.Rollback()
 		return err
 	}
 
 	return session.Commit()
-}
-
-func GetCollectByNid(collectType string, nids []int64) ([]interface{}, error) {
-	var res []interface{}
-	switch collectType {
-	case "port":
-		collects := []PortCollect{}
-		err := DB["mon"].In("nid", nids).Find(&collects)
-		for _, c := range collects {
-			res = append(res, c)
-		}
-		return res, err
-
-	case "proc":
-		collects := []ProcCollect{}
-		err := DB["mon"].In("nid", nids).Find(&collects)
-		for _, c := range collects {
-			res = append(res, c)
-		}
-		return res, err
-
-	case "log":
-		collects := []LogCollect{}
-		err := DB["mon"].In("nid", nids).Find(&collects)
-		for _, c := range collects {
-			c.Decode()
-			res = append(res, c)
-		}
-		return res, err
-
-	case "plugin":
-		collects := []PluginCollect{}
-		err := DB["mon"].In("nid", nids).Find(&collects)
-		for _, c := range collects {
-			res = append(res, c)
-		}
-		return res, err
-
-	default:
-		return nil, fmt.Errorf("采集类型不合法")
-	}
-
-}
-
-func GetCollectById(collectType string, cid int64) (interface{}, error) {
-	switch collectType {
-	case "port":
-		collect := new(PortCollect)
-		has, err := DB["mon"].Where("id = ?", cid).Get(collect)
-		if !has {
-			return nil, err
-		}
-		return collect, err
-	case "proc":
-		collect := new(ProcCollect)
-		has, err := DB["mon"].Where("id = ?", cid).Get(collect)
-		if !has {
-			return nil, err
-		}
-		return collect, err
-	case "log":
-		collect := new(LogCollect)
-		has, err := DB["mon"].Where("id = ?", cid).Get(collect)
-		if !has {
-			return nil, err
-		}
-		collect.Decode()
-		return collect, err
-	case "plugin":
-		collect := new(PluginCollect)
-		has, err := DB["mon"].Where("id = ?", cid).Get(collect)
-		if !has {
-			return nil, err
-		}
-		return collect, err
-
-	default:
-		return nil, fmt.Errorf("采集类型不合法")
-	}
-
-	return nil, nil
-}
-
-func GetCollectByNameAndNid(collectType string, name string, nid int64) (interface{}, error) {
-	switch collectType {
-	case "port":
-		collect := new(PortCollect)
-		has, err := DB["mon"].Where("name = ? and nid = ?", name, nid).Get(collect)
-		if !has {
-			return nil, err
-		}
-		return collect, err
-	case "proc":
-		collect := new(ProcCollect)
-		has, err := DB["mon"].Where("name = ? and nid = ?", name, nid).Get(collect)
-		if !has {
-			return nil, err
-		}
-		return collect, err
-	case "log":
-		collect := new(LogCollect)
-		has, err := DB["mon"].Where("name = ? and nid = ?", name, nid).Get(collect)
-		if !has {
-			return nil, err
-		}
-		collect.Decode()
-		return collect, err
-	case "plugin":
-		collect := new(PluginCollect)
-		has, err := DB["mon"].Where("name = ? and nid = ?", name, nid).Get(collect)
-		if !has {
-			return nil, err
-		}
-		return collect, err
-
-	default:
-		return nil, fmt.Errorf("采集类型不合法")
-	}
-
-	return nil, nil
 }
 
 func DeleteCollectById(collectType, creator string, cid int64) error {
@@ -742,7 +564,7 @@ func DeleteCollectById(collectType, creator string, cid int64) error {
 		return err
 	}
 
-	if err := saveHist(cid, collectType, "delete", creator, strconv.FormatInt(cid, 10), session); err != nil {
+	if err := saveHistory(cid, collectType, "delete", creator, strconv.FormatInt(cid, 10), session); err != nil {
 		session.Rollback()
 		return err
 	}
@@ -750,7 +572,7 @@ func DeleteCollectById(collectType, creator string, cid int64) error {
 	return session.Commit()
 }
 
-func saveHist(id int64, tp string, action, username, body string, session *xorm.Session) error {
+func saveHistory(id int64, tp string, action, username, body string, session *xorm.Session) error {
 	h := CollectHist{
 		Cid:         id,
 		CollectType: tp,

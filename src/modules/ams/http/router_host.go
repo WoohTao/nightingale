@@ -113,11 +113,7 @@ type hostTenantForm struct {
 	Tenant string  `json:"tenant"`
 }
 
-// 管理员修改主机设备的租户，相当于分配设备
-func hostTenantPut(c *gin.Context) {
-	var f hostTenantForm
-	bind(c, &f)
-
+func (f *hostTenantForm) Validate() {
 	if len(f.Ids) == 0 {
 		bomb("ids is empty")
 	}
@@ -125,6 +121,13 @@ func hostTenantPut(c *gin.Context) {
 	if f.Tenant == "" {
 		bomb("tenant is blank")
 	}
+}
+
+// 管理员修改主机设备的租户，相当于分配设备
+func hostTenantPut(c *gin.Context) {
+	var f hostTenantForm
+	bind(c, &f)
+	f.Validate()
 
 	hosts, err := models.HostByIds(f.Ids)
 	dangerous(err)
@@ -141,6 +144,78 @@ func hostTenantPut(c *gin.Context) {
 	}
 
 	renderMessage(c, err)
+}
+
+type hostNodeForm struct {
+	Ids    []int64 `json:"ids"`
+	NodeId int64   `json:"nodeid"`
+}
+
+func (f *hostNodeForm) Validate() {
+	if len(f.Ids) == 0 {
+		bomb("ids is empty")
+	}
+
+	if f.NodeId == 0 {
+		bomb("nodeid is blank")
+	}
+
+	if f.NodeId < 0 {
+		bomb("nodeid is illegal")
+	}
+}
+
+// 管理员修改主机设备的节点，相当于挂载设备到节点
+func hostNodePut(c *gin.Context) {
+	var f hostNodeForm
+	bind(c, &f)
+	f.Validate()
+
+	loginUser(c).CheckPermGlobal("ams_host_modify")
+	node, err := models.NodeGet("id=?", f.NodeId)
+	dangerous(err)
+	if node == nil {
+		bomb("node is nil")
+	}
+
+	if node.Leaf != 1 {
+		bomb("node is not leaf")
+	}
+
+	hosts, err := models.HostByIds(f.Ids)
+	dangerous(err)
+	if len(hosts) == 0 {
+		bomb("hosts is empty")
+	}
+
+	for _, h := range hosts {
+		if h.Tenant != "" {
+			bomb("%s already belongs to %s", h.Name, h.Tenant)
+		}
+	}
+
+	// 绑定租户
+	tenant := node.Tenant()
+	err = models.HostUpdateTenant(f.Ids, tenant)
+	dangerous(err)
+	dangerous(models.ResourceRegister(hosts, tenant))
+
+	// 绑定到节点
+	var resUuids []string
+	for _, id := range f.Ids {
+		idStr := fmt.Sprintf("host-%d", id)
+		resUuids = append(resUuids, idStr)
+	}
+	if len(resUuids) == 0 {
+		bomb("res is empty")
+	}
+	resIds, err := models.ResourceIdsByUUIDs(resUuids)
+	dangerous(err)
+	if len(resIds) == 0 {
+		bomb("res ids is empty")
+	}
+
+	renderMessage(c, node.Bind(resIds))
 }
 
 type hostNoteForm struct {
@@ -271,7 +346,12 @@ func v1HostRegister(c *gin.Context) {
 		oldFields[k] = v
 	}
 
-	uniqValue := f.SN
+	uniqValue := ""
+
+	if f.UniqKey == "sn" {
+		uniqValue = f.SN
+	}
+
 	if f.UniqKey == "ip" {
 		uniqValue = f.IP
 	}

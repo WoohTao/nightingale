@@ -1,3 +1,17 @@
+// Copyright 2017 Xiaomi, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package tsdb
 
 import (
@@ -443,21 +457,22 @@ type IndexByFullTagsResp struct {
 	Err  string                        `json:"err"`
 }
 
-func (tsdb *TsdbDataSource) QueryIndexByFullTags(recv []dataobj.IndexByFullTagsRecv) []dataobj.IndexByFullTagsResp {
+// deprecated
+func (tsdb *TsdbDataSource) QueryIndexByFullTags(recv []dataobj.IndexByFullTagsRecv) ([]dataobj.IndexByFullTagsResp, int) {
 	var result IndexByFullTagsResp
 	err := PostIndex("/api/index/counter/fullmatch", int64(tsdb.Section.CallTimeout),
 		recv, &result)
 	if err != nil {
 		logger.Errorf("post index failed, %+v", err)
-		return nil
+		return nil, 0
 	}
 
 	if result.Err != "" || len(result.Data) == 0 {
 		logger.Errorf("index fullTags failed, %+v", result.Err)
-		return nil
+		return nil, 0
 	}
 
-	return result.Data
+	return result.Data, len(result.Data)
 }
 
 func PostIndex(url string, calltimeout int64, recv interface{}, resp interface{}) error {
